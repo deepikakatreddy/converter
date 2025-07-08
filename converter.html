@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Universal Converter</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #e1f5fe, #ede7f6);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .converter {
+      background: white;
+      padding: 30px 25px;
+      max-width: 520px;
+      width: 100%;
+      border-radius: 15px;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    h2 {
+      text-align: center;
+      color: #4a148c;
+      margin-bottom: 25px;
+    }
+    label {
+      font-weight: 600;
+      margin-top: 15px;
+      display: block;
+      color: #333;
+    }
+    select, input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 6px;
+      font-size: 14px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      margin-bottom: 14px;
+    }
+    button {
+      background-color: #6a1b9a;
+      color: white;
+      font-weight: bold;
+      border: none;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background-color: #4a0072;
+    }
+    .result {
+      font-weight: bold;
+      margin-top: 20px;
+      padding: 12px;
+      background: #f3e5f5;
+      border-left: 5px solid #6a1b9a;
+      color: #4a0072;
+      border-radius: 8px;
+    }
+    .history {
+      margin-top: 20px;
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 8px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 14px;
+    }
+    .history-entry {
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="converter">
+    <h2>Universal Converter</h2>
+    <label for="category">Conversion Category</label>
+    <select id="category">
+      <option value="length">Length</option>
+      <option value="weight">Weight</option>
+      <option value="temperature">Temperature</option>
+      <option value="currency">Currency</option>
+      <option value="height">Height</option>
+      <option value="time">Time</option>
+    </select>
+
+    <label for="value">Enter Value</label>
+    <input type="number" id="value" placeholder="Enter value" />
+
+    <label for="fromUnit">From Unit</label>
+    <select id="fromUnit"></select>
+
+    <label for="toUnit">To Unit</label>
+    <select id="toUnit"></select>
+
+    <button onclick="convert()">Convert</button>
+
+    <div class="result" id="result">Result: --</div>
+    <div class="history" id="historyBox">
+      <strong>History:</strong>
+      <div id="historyEntries"></div>
+    </div>
+  </div>
+
+  <script>
+    const unitMap = {
+      length: ["meters", "feet", "kilometers", "miles"],
+      weight: ["kg", "pounds", "grams", "ounces"],
+      temperature: ["celsius", "fahrenheit", "kelvin"],
+      currency: ["USD", "INR", "EUR", "GBP", "JPY", "CAD"],
+      height: ["cm", "feet"],
+      time: ["seconds", "minutes", "hours", "days"]
+    };
+
+    const conversions = {
+      length: (val, from, to) => {
+        const factors = {
+          meters: 1,
+          feet: 0.3048,
+          kilometers: 1000,
+          miles: 1609.34
+        };
+        return (val * factors[from]) / factors[to];
+      },
+      weight: (val, from, to) => {
+        const factors = {
+          kg: 1,
+          pounds: 0.453592,
+          grams: 0.001,
+          ounces: 0.0283495
+        };
+        return (val * factors[from]) / factors[to];
+      },
+      temperature: (val, from, to) => {
+        if (from === to) return val;
+        if (from === "celsius") return to === "fahrenheit" ? (val * 9/5 + 32) : val + 273.15;
+        if (from === "fahrenheit") return to === "celsius" ? (val - 32) * 5/9 : ((val - 32) * 5/9) + 273.15;
+        if (from === "kelvin") return to === "celsius" ? val - 273.15 : ((val - 273.15) * 9/5 + 32);
+      },
+      currency: async (val, from, to) => {
+        if (from === to) return val;
+        const res = await fetch(`https://api.exchangerate.host/latest?base=${from}`);
+        const data = await res.json();
+        return val * data.rates[to];
+      },
+      height: (val, from, to) => from === to ? val : from === "cm" ? val / 30.48 : val * 30.48,
+      time: (val, from, to) => {
+        const seconds = {
+          seconds: 1,
+          minutes: 60,
+          hours: 3600,
+          days: 86400
+        };
+        return (val * seconds[from]) / seconds[to];
+      }
+    };
+
+    const categorySelect = document.getElementById("category");
+    const fromUnit = document.getElementById("fromUnit");
+    const toUnit = document.getElementById("toUnit");
+    const historyBox = document.getElementById("historyEntries");
+
+    function populateUnits() {
+      const units = unitMap[categorySelect.value];
+      fromUnit.innerHTML = toUnit.innerHTML = "";
+      units.forEach(u => {
+        fromUnit.add(new Option(u, u));
+        toUnit.add(new Option(u, u));
+      });
+    }
+
+    function updateHistory(entry) {
+      let history = JSON.parse(localStorage.getItem("conversionHistory")) || [];
+      history.unshift(entry);
+      if (history.length > 5) history = history.slice(0, 5);
+      localStorage.setItem("conversionHistory", JSON.stringify(history));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const history = JSON.parse(localStorage.getItem("conversionHistory")) || [];
+      historyBox.innerHTML = history.map(h => `<div class="history-entry">${h}</div>`).join("");
+    }
+
+    async function convert() {
+      const cat = categorySelect.value;
+      const val = parseFloat(document.getElementById("value").value);
+      const from = fromUnit.value;
+      const to = toUnit.value;
+      if (isNaN(val)) return alert("Enter a valid number");
+      const resultArea = document.getElementById("result");
+      resultArea.textContent = "Converting...";
+      const res = cat === "currency" ? await conversions[cat](val, from, to) : conversions[cat](val, from, to);
+      const final = `Result: ${res.toFixed(3)} ${to}`;
+      resultArea.textContent = final;
+      updateHistory(`${val} ${from} ➜ ${res.toFixed(3)} ${to}`);
+    }
+
+    categorySelect.addEventListener("change", populateUnits);
+    populateUnits();
+    renderHistory();
+  </script>
+</body>
+</html>
